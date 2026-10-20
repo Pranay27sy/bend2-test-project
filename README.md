@@ -10,6 +10,7 @@ with a **machine-checked proof that money is never created or destroyed**.
 | `PROOF.bend` | AI / code   | the proofs that every law holds                       |
 | `AGENTS.md`  | human       | instructions for coding agents working on this repo   |
 | `nim/`       | code + proofs | a playable Nim game with its own laws ([README](nim/README.md)) |
+| `royale/`    | code + proofs | Last Circle, a top-down battle royale with its own laws ([README](royale/README.md)) |
 
 ## The model
 

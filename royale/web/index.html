@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Last Circle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Barlow:wght@500;700&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  /* Layout: the map fills the screen; the HUD floats on its edges (circle
+     status top, health and ammo bottom, minimap top right) and the start and
+     end screens sit over it as cards. One committed look: dusk over a field,
+     with the storm in electric blue. */
+  :root {
+    --ink: #eef1e6;
+    --dim: #a9b2a0;
+    --panel: rgba(16, 20, 17, 0.72);
+    --edge: rgba(238, 241, 230, 0.16);
+    --signal: #ffb340;
+    --storm: #7d8cff;
+    --life: #8fd16a;
+    --danger: #ff5a4f;
+    --font-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+    --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { background: #1a1f1b; color: var(--ink); font: 15px/1.45 var(--font-body); }
+  canvas#view { position: fixed; inset: 0; display: block; touch-action: none; cursor: crosshair; outline: none; }
+
+  .hud { position: fixed; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .top {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; align-items: center;
+    max-width: calc(100% - 200px);
+  }
+  .chip {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 6px;
+    padding: 5px 12px; white-space: nowrap;
+  }
+  .chip b { font-family: var(--font-display); font-weight: 900; font-size: 1.35rem; line-height: 1; margin-right: 6px; }
+  .label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  #zone { color: var(--storm); font-weight: 700; white-space: normal; }
+  #zone[data-out="1"] { color: #fff; background: rgba(64, 86, 255, 0.75); border-color: var(--storm); }
+
+  #feed {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.85rem;
+    max-width: min(300px, 40vw);
+  }
+  #feed li { background: var(--panel); border-radius: 4px; padding: 3px 9px; }
+  #feed li.mine { color: var(--signal); }
+  #feed li.me { color: var(--danger); }
+
+  #minimap {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    right: max(16px, env(safe-area-inset-right, 0px));
+    width: 150px; height: 150px; border: 2px solid var(--edge); border-radius: 6px;
+  }
+
+  .bottom {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    left: 50%; transform: translateX(-50%);
+    display: flex; gap: 12px; align-items: end;
+    width: min(560px, calc(100% - 32px));
+  }
+  .health { flex: 1; min-width: 0; }
+  .bar { height: 14px; background: rgba(0, 0, 0, 0.55); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  #hpbar { height: 100%; width: 100%; background: var(--life); transition: width 0.15s; }
+  #hpbar[data-low="1"] { background: var(--danger); }
+  .stat { text-align: right; }
+  .stat b { display: block; font-family: var(--font-display); font-weight: 900; font-size: 2rem; line-height: 0.95; }
+  #ammo { color: var(--signal); }
+
+  .card-wrap {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: rgba(10, 13, 11, 0.55);
+    padding-block: 24px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    overflow-y: auto;
+  }
+  .card {
+    background: rgba(18, 22, 19, 0.94); border: 1px solid var(--edge); border-radius: 10px;
+    padding: 26px clamp(18px, 4vw, 34px); max-width: 560px; width: 100%;
+    display: grid; gap: 14px;
+  }
+  .card h1, .card h2 {
+    font-family: var(--font-display); font-weight: 900; text-transform: uppercase; margin: 0;
+    line-height: 0.9; letter-spacing: 0.01em; text-wrap: balance;
+  }
+  .card h1 { font-size: clamp(3.2rem, 13vw, 5rem); }
+  .card h1 span { color: var(--storm); }
+  .card h2 { font-size: clamp(2.2rem, 9vw, 3.2rem); color: var(--signal); }
+  .card p { margin: 0; color: var(--dim); }
+  .card p strong { color: var(--ink); }
+  .controls { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.9rem; margin: 0; }
+  .controls dt { font-family: var(--font-mono); font-size: 0.8rem; color: var(--signal); padding-top: 2px; }
+  .controls dd { margin: 0; color: var(--dim); }
+  .laws { border-top: 1px solid var(--edge); padding-top: 12px; display: grid; gap: 6px; }
+  .laws ul { margin: 0; padding-left: 18px; color: var(--dim); font-size: 0.88rem; display: grid; gap: 2px; }
+  .laws code { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); }
+  button.go {
+    font: 700 1.05rem var(--font-body); letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--signal); color: #1d1606; border: 0; border-radius: 6px; padding: 12px 18px; cursor: pointer;
+    justify-self: start;
+  }
+  button.go:hover { filter: brightness(1.08); }
+  button.go:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+  @media (max-width: 640px) {
+    #minimap { width: 104px; height: 104px; }
+    .top {
+      top: calc(env(safe-area-inset-top, 0px) + 126px);
+      left: max(16px, env(safe-area-inset-left, 0px)); transform: none;
+      max-width: calc(100% - 32px); flex-wrap: wrap; font-size: 0.85rem;
+    }
+    #zone { white-space: nowrap; }
+    #feed { max-width: calc(100% - 150px); font-size: 0.78rem; }
+  }
+  @media (hover: none) { .controls .desk { display: none; } }
+  @media (hover: hover) { .controls .touch { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="view" tabindex="0" aria-label="The battlefield"></canvas>
+
+<div class="hud top">
+  <span class="chip"><b id="alive">16</b><span class="label">alive</span></span>
+  <span class="chip" id="zone">Circle closes in 25s</span>
+</div>
+<ol class="hud" id="feed"></ol>
+<canvas class="hud" id="minimap" width="300" height="300" aria-label="Minimap"></canvas>
+<div class="hud bottom">
+  <div class="health">
+    <span class="label">health</span> <span id="hpnum">100</span>
+    <div class="bar"><div id="hpbar"></div></div>
+  </div>
+  <div class="stat"><span class="label">ammo</span><b id="ammo">12</b></div>
+  <div class="stat"><span class="label">kills</span><b id="kills">0</b></div>
+</div>
+
+<div class="card-wrap" id="start">
+  <div class="card">
+    <h1>Last <span>Circle</span></h1>
+    <p>Sixteen fighters drop onto one field. Grab ammo and medkits, win your fights, and stay inside the blue circle as it closes. <strong>The last one standing wins.</strong></p>
+    <dl class="controls">
+      <dt class="desk">WASD</dt><dd class="desk">move</dd>
+      <dt class="desk">mouse</dt><dd class="desk">aim, click or hold to shoot</dd>
+      <dt class="touch">left thumb</dt><dd class="touch">drag to move</dd>
+      <dt class="touch">right thumb</dt><dd class="touch">drag to aim and shoot</dd>
+      <dt>trees</dt><dd>stand under one and the bots struggle to spot you</dd>
+      <dt>loot</dt><dd>walk over it: yellow is ammo, white is a medkit</dd>
+    </dl>
+    <div class="laws">
+      <span class="label">Proven in Bend</span>
+      <ul>
+        <li>the dead stay dead: no revives, no looting, no shooting</li>
+        <li>health never goes above <code>100</code></li>
+        <li>every shot spends exactly one bullet</li>
+        <li>the circle never grows back</li>
+      </ul>
+    </div>
+    <button class="go" id="go" type="button">Drop in</button>
+  </div>
+</div>
+
+<div class="card-wrap" id="end" hidden>
+  <div class="card">
+    <h2 id="end-title">You placed #2</h2>
+    <p id="end-detail"></p>
+    <button class="go" id="again" type="button">Drop again</button>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
