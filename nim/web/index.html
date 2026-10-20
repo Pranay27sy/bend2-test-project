@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Proven Nim</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: a slate playing surface with the piles as rows of pebbles; the
+     rules panel (nim-sum in binary, move log, the laws) sits beside it and
+     drops below it on a phone. */
+  :root {
+    --ground: #e6e9e7;
+    --slate: #f6f7f5;
+    --ink: #1d2422;
+    --muted: #5b6763;
+    --line: #c9d0cc;
+    --stone-hi: #59615e;
+    --stone-lo: #1f2523;
+    --accent: #2f7d6e;
+    --cpu: #a3532e;
+    --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+    --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --stone: clamp(26px, 7.4vw, 40px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #141917; --slate: #1d2421; --ink: #e3e8e5; --muted: #93a19c; --line: #2f3a36;
+      --stone-hi: #e9ece6; --stone-lo: #9aa39d; --accent: #6cc2b0; --cpu: #e59a72; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #141917; --slate: #1d2421; --ink: #e3e8e5; --muted: #93a19c; --line: #2f3a36;
+    --stone-hi: #e9ece6; --stone-lo: #9aa39d; --accent: #6cc2b0; --cpu: #e59a72; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 16px/1.5 var(--font-body);
+    padding-block: 28px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 22px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(2.4rem, 7vw, 3.6rem);
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede { margin: 6px 0 0; color: var(--muted); max-width: 52ch; }
+  .score { display: flex; gap: 18px; font-family: var(--font-mono); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .score b { display: block; font-size: 1.6rem; color: var(--ink); font-weight: 600; line-height: 1.1; }
+  .score .you b { color: var(--accent); }
+  .score .cpu b { color: var(--cpu); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+  @media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .table {
+    background: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px clamp(14px, 3vw, 26px) 18px;
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  #status {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.15rem;
+    min-height: 2.9em;
+    text-wrap: balance;
+  }
+  #status[data-state="cpu"] { color: var(--cpu); }
+  #status[data-state="over"] { color: var(--accent); }
+
+  #board { display: grid; gap: 10px; }
+  .pile {
+    display: grid;
+    grid-template-columns: 1.6em minmax(0, 1fr) 2em;
+    align-items: center;
+    gap: 10px;
+    min-height: calc(var(--stone) + 14px);
+    border-bottom: 1px dashed var(--line);
+    padding-bottom: 8px;
+  }
+  .pile:last-child { border-bottom: 0; }
+  .pile-label, .pile-count { font-family: var(--font-mono); color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  .pile-count { text-align: right; }
+  .stones { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .stone {
+    width: var(--stone);
+    height: calc(var(--stone) * 0.86);
+    border: 0;
+    padding: 0;
+    border-radius: 48% 52% 46% 54% / 55% 50% 50% 45%;
+    background: radial-gradient(circle at 34% 30%, var(--stone-hi), var(--stone-lo) 72%);
+    box-shadow: 0 2px 0 color-mix(in srgb, var(--stone-lo) 60%, transparent), 0 4px 10px rgb(0 0 0 / 0.15);
+    transform: rotate(var(--tilt));
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s, outline-color 0.15s;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .stone:disabled { cursor: default; }
+  .stone:focus-visible { outline-color: var(--accent); }
+  .stone.doomed { transform: rotate(var(--tilt)) translateY(-5px); opacity: 0.55; outline-color: var(--accent); }
+  .stone.gone { pointer-events: none; animation: lift 0.6s ease-in forwards; }
+  .stone.gone.cpu { outline-color: var(--cpu); }
+  @keyframes lift {
+    0%   { opacity: 0.9; transform: rotate(var(--tilt)); }
+    100% { opacity: 0;   transform: rotate(var(--tilt)) translateY(-22px) scale(0.7); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stone { transition: none; }
+    .stone.gone { animation: none; opacity: 0; }
+  }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 14px; }
+  .controls label { color: var(--muted); font-size: 0.9rem; display: flex; gap: 8px; align-items: center; }
+  select, button.action {
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--ink);
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 12px;
+  }
+  button.action { background: var(--accent); color: var(--slate); border-color: var(--accent); font-weight: 700; cursor: pointer; }
+  button.action:hover { filter: brightness(1.08); }
+  select:focus-visible, button.action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  aside { display: grid; gap: 16px; min-width: 0; }
+  aside section { border-top: 2px solid var(--ink); padding-top: 10px; }
+  aside h2 { font-family: var(--font-display); font-weight: 800; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; margin: 0 0 8px; }
+  #math {
+    display: grid;
+    grid-template-columns: 1.4em auto 1fr;
+    gap: 2px 10px;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+  #math span { color: var(--muted); }
+  #math code { font-family: inherit; letter-spacing: 0.18em; }
+  #math .dec { text-align: right; }
+  #math .xor, #math .sum, #math .xor ~ .dec { border-top: 1px solid var(--line); padding-top: 3px; margin-top: 3px; }
+  #math .sum { font-weight: 600; color: var(--accent); }
+  #math-note, .laws p { color: var(--muted); font-size: 0.88rem; margin: 8px 0 0; }
+  #log { list-style: none; margin: 0; padding: 0; font-size: 0.9rem; display: grid; gap: 3px; }
+  #log li b { font-weight: 700; }
+  #log li.you b { color: var(--accent); }
+  #log li.cpu b { color: var(--cpu); }
+  #log:empty::before { content: "No moves yet."; color: var(--muted); }
+  .laws pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.45;
+    background: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    overflow-x: auto;
+  }
+  .laws .kw { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Proven <em>Nim</em></h1>
+      <p class="lede">Take turns taking stones from one pile at a time. Whoever takes the last stone wins. The rules run in Bend, with a machine-checked proof that no move ever creates or destroys a stone.</p>
+    </div>
+    <div class="score" aria-live="polite">
+      <span class="you">you<b id="score-you">0</b></span>
+      <span class="cpu">computer<b id="score-cpu">0</b></span>
+      <span>stones left<b id="stones-left">12</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main class="table">
+      <p id="status" aria-live="polite">Your move.</p>
+      <div id="board"></div>
+      <div class="controls">
+        <label for="who">First move
+          <select id="who">
+            <option value="you">You</option>
+            <option value="cpu">Computer</option>
+          </select>
+        </label>
+        <button class="action" id="new" type="button">New random game</button>
+      </div>
+    </main>
+
+    <aside>
+      <section>
+        <h2>Nim-sum</h2>
+        <div id="math"></div>
+        <p id="math-note"></p>
+      </section>
+      <section>
+        <h2>Moves</h2>
+        <ol id="log"></ol>
+      </section>
+      <section class="laws">
+        <h2>Laws</h2>
+<pre><span class="kw">law</span> take_conserves:
+  for +xs: List&lt;&amp;2, Nat&gt;
+  for  mv: N.Take
+  {taken(xs, mv) + total(take(xs, mv))
+     == total(xs)}
+
+<span class="kw">law</span> ai_takes:
+  for +xs  : List&lt;&amp;2, Nat&gt;
+  for  live: N.Live(xs)
+  exs  k   : Nat
+  {taken(xs, ai(xs)) == 1n+k}</pre>
+        <p>Both are proven in <code>PROOF.bend</code>, for every board and every move. The computer plays the xor strategy, but only after Bend has checked the move is legal.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
